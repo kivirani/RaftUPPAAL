@@ -1,0 +1,1414 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.1//EN' 'http://www.it.uu.se/research/group/darts/uppaal/flat-1_1.dtd'>
+<nta>
+	<declaration>const int MaxServers=5;
+const int MaxClients=5;
+const int MaxData=10;
+const int LogCapacity=10;
+const int ClientReqResQueueCapacity=10;
+const int ClientReqQueueCapacity=10;
+const int VoteReqQueueCapacity=10;
+const int VoteReqResQueueCapacity=10;
+const int AppendEntriesQCapacity=10;
+const int AppendentryRSQCapacity=10;
+
+typedef struct
+{
+	int clientId;
+    int index;
+	int term;
+	int key;  
+	int value;
+}  LogEntry;
+void initializeLogEntry(LogEntry &amp;e,int clientId,int term,int key,int value)
+{
+	e.clientId=clientId;
+	e.term=term;
+	e.key=key;
+	e.value=value;
+}
+typedef struct
+{
+	LogEntry logg[LogCapacity];
+	int front;
+	int end;
+	int logSize;	    
+}  LogQueue;
+void initializeLogQueue(LogQueue &amp;lq)
+{
+	lq.front=-1;
+	lq.end=-1;
+	lq.logSize=0;
+}
+
+bool isNotEmptyLogQueue(LogQueue &amp;lq)
+{
+    return lq.logSize&gt;0;
+}
+bool pushInLogQueue(LogQueue &amp;lq,LogEntry &amp;le)
+{
+    if(lq.logSize==0)
+    {        
+	if(lq.front==-1)
+	{
+		lq.front=0;
+        	lq.end=0;
+	}
+	
+	lq.logg[lq.end].clientId=le.clientId;
+	lq.logg[lq.end].term=le.term;
+	lq.logg[lq.end].key=le.key;  
+	lq.logg[lq.end].value=le.value;
+	
+        lq.logSize=lq.logSize+1;
+	return true;
+    }
+    else
+    {
+	if(lq.logSize&lt;LogCapacity)
+	{
+		
+        	lq.end=(lq.end+1)%LogCapacity;
+		lq.logg[lq.end].clientId=le.clientId;
+		lq.logg[lq.end].term=le.term;
+		lq.logg[lq.end].key=le.key;  
+		lq.logg[lq.end].value=le.value;
+	
+        	lq.logSize=lq.logSize+1;
+		return true;
+	}
+    }
+    return false;
+}
+
+bool popFrontLogQueue(LogQueue &amp;lq)
+{
+    if(lq.logSize&gt;0)
+    {
+        if(lq.front==lq.end)
+	    	lq.end=(lq.front+1)%LogCapacity;    
+        lq.front=(lq.front+1)%LogCapacity;
+	    lq.logSize=lq.logSize-1;
+	
+    	return true;   
+        
+    }
+    return false;
+}
+
+/////////////////
+typedef struct
+{
+    int term;
+    int[0,MaxServers-1] candidateId;
+    int lastLogIndex;
+    int lastLogTerm;
+}  VoteReq;
+
+void initialize_VoteReq(VoteReq &amp;e,int term,int[0,MaxServers-1] candidateId,int lastLogIndex,int lastLogTerm)
+{
+    e.term=term;    
+    e.candidateId=candidateId;
+    e.lastLogTerm=lastLogTerm;
+    e.lastLogIndex=lastLogIndex;
+    
+}
+
+typedef struct 
+{
+    VoteReq votereq[VoteReqQueueCapacity];
+    int front;
+    int end;
+    int voteRQSize;
+    
+} VoteReqQueue;
+void initialize_VoteReq_Queue(VoteReqQueue &amp;vrq)
+{
+    vrq.front=-1;
+    vrq.end=-1;
+    vrq.voteRQSize=0;
+}
+
+bool is_Not_Empty_VoteReq_Queue(VoteReqQueue &amp;vrq)
+{
+    return vrq.voteRQSize&gt;0;
+}
+bool push_In_VoteReq_Queue(VoteReqQueue &amp;vrq,VoteReq &amp;vr)
+{
+    if(vrq.voteRQSize==0)
+    {        
+	if(vrq.front==-1)
+	{
+		vrq.front=0;
+        	vrq.end=0;
+	}
+	vrq.votereq[vrq.end].term=vr.term;
+	vrq.votereq[vrq.end].candidateId=vr.candidateId;
+	vrq.votereq[vrq.end].lastLogIndex=vr.lastLogIndex;  
+	vrq.votereq[vrq.end].lastLogTerm=vr.lastLogTerm;
+	
+        vrq.voteRQSize=vrq.voteRQSize+1;
+	return true;
+    }
+    else
+    {
+	if(vrq.voteRQSize&lt;VoteReqQueueCapacity)
+	{
+		
+        	vrq.end=(vrq.end+1)%VoteReqQueueCapacity;
+		vrq.votereq[vrq.end].term=vr.term;
+		vrq.votereq[vrq.end].candidateId=vr.candidateId;
+		vrq.votereq[vrq.end].lastLogIndex=vr.lastLogIndex;  
+		vrq.votereq[vrq.end].lastLogTerm=vr.lastLogTerm;
+
+        	vrq.voteRQSize=vrq.voteRQSize+1;
+		return true;
+	}
+    }
+    return false;
+}
+
+bool pop_Front_VoteReq_Queue(VoteReqQueue &amp;vrq)
+{
+    if(vrq.voteRQSize&gt;0)
+    {
+        if(vrq.front==vrq.end)
+		    vrq.end=(vrq.front+1)%VoteReqQueueCapacity;         
+            
+        vrq.front=(vrq.front+1)%VoteReqQueueCapacity;
+	vrq.voteRQSize=vrq.voteRQSize-1;
+	
+	return true;   
+        
+    }
+    return false;
+}
+///////////////////////////////
+typedef struct 
+{
+    int term;
+    bool voteGranted;
+    int followerId;
+    int candidateId;
+    
+} VoteReqRes;
+
+
+void initialize_VoteReqRes(VoteReqRes &amp;e, int term, bool voteGranted,int candidateId,int followerId)
+{   
+    e.term=term;
+    e.voteGranted=voteGranted;
+    e.followerId=followerId;
+    e.candidateId=candidateId;
+}
+
+typedef struct 
+{
+    VoteReqRes vrrs[VoteReqResQueueCapacity];
+    int front;
+    int end;
+    int voteReqResSize;
+} VoteReqResQueue;
+void initialize_VoteReqRes_Queue(VoteReqResQueue &amp;vrrq)
+{
+    vrrq.front=-1;
+    vrrq.end=-1;
+    vrrq.voteReqResSize=0;
+}
+bool is_Not_Empty_VoteReqRes_Queue(VoteReqResQueue &amp;vrrq)
+{
+    return vrrq.voteReqResSize&gt;0;
+}
+bool push_In_VoteReqRes_Queue(VoteReqResQueue &amp;vrrq,VoteReqRes &amp;vrr)
+{
+    if(vrrq.voteReqResSize==0)
+    {        
+	if(vrrq.front==-1)
+	{
+		vrrq.front=0;
+        	vrrq.end=0;
+	}
+	
+	vrrq.vrrs[vrrq.end].term=vrr.term;
+	vrrq.vrrs[vrrq.end].voteGranted=vrr.voteGranted;
+	vrrq.vrrs[vrrq.end].candidateId=vrr.candidateId;  
+	vrrq.vrrs[vrrq.end].followerId=vrr.followerId;
+	
+        vrrq.voteReqResSize=vrrq.voteReqResSize+1;
+	return true;
+    }
+    else
+    {
+	if(vrrq.voteReqResSize&lt;VoteReqResQueueCapacity)
+	{
+		
+        	vrrq.end=(vrrq.end+1)%VoteReqResQueueCapacity;
+		vrrq.vrrs[vrrq.end].term=vrr.term;
+		vrrq.vrrs[vrrq.end].voteGranted=vrr.voteGranted;
+		vrrq.vrrs[vrrq.end].candidateId=vrr.candidateId;  
+		vrrq.vrrs[vrrq.end].followerId=vrr.followerId;
+				
+	        vrrq.voteReqResSize=vrrq.voteReqResSize+1;
+		return true;
+	}
+    }
+    return false;
+    
+}
+
+bool pop_Front_VoteReqRes_Queue(VoteReqResQueue &amp;vrrq)
+{
+    if(vrrq.voteReqResSize&gt;0)
+    {
+        if(vrrq.front==vrrq.end)
+		    vrrq.end=(vrrq.front+1)%VoteReqResQueueCapacity;    
+        vrrq.front=(vrrq.front+1)%VoteReqResQueueCapacity;
+	    vrrq.voteReqResSize=vrrq.voteReqResSize-1;
+	
+	    return true;   
+        
+    }
+    return false;
+}
+
+//////////////////////////////
+typedef struct 
+{
+    int term;
+    int leaderId;
+    int prevLogIndex;
+    int prevLogTerm;
+    LogQueue logg[LogCapacity];    
+    int leaderCommit;
+} AppendEntries;
+
+
+
+void initialize_AppendEntries(AppendEntries &amp;e, int term, int leaderId,int prevLogIndex,int prevLogTerm,int leaderCommit)
+{   
+    e.term=term;
+    e.leaderId=leaderId;
+    e.prevLogIndex=prevLogIndex;
+    e.prevLogTerm=prevLogTerm;
+    e.leaderCommit=leaderCommit;
+}
+
+typedef struct 
+{
+    AppendEntries appendr[AppendEntriesQCapacity];
+    int front;
+    int end; 
+    int appendEntryQSize;
+} AppendEntriesQueue;
+void initialize_AppendEntries_Queue(AppendEntriesQueue &amp;aeq)
+{
+    aeq.front=-1;
+    aeq.end=-1;
+    aeq.appendEntryQSize=0;
+}
+bool is_Not_Empty_AppendEntries_Queue(AppendEntriesQueue &amp;aeq)
+{
+    return aeq.appendEntryQSize&gt;0;
+}
+bool push_In_AppendEntries_Queue(AppendEntriesQueue &amp;aeq,AppendEntries &amp;ae)
+{
+    if(aeq.appendEntryQSize==0)
+    {        
+	if(aeq.front==-1)
+	{
+		aeq.front=0;
+        	aeq.end=0;
+	}
+
+	
+	aeq.appendr[aeq.end].term=ae.term;
+	aeq.appendr[aeq.end].leaderId=ae.leaderId;
+	aeq.appendr[aeq.end].prevLogIndex=ae.prevLogIndex;  
+	aeq.appendr[aeq.end].prevLogTerm=ae.prevLogTerm;
+	aeq.appendr[aeq.end].logg=ae.logg;
+	aeq.appendr[aeq.end].leaderCommit=ae.leaderCommit;
+	
+        aeq.appendEntryQSize=aeq.appendEntryQSize+1;
+	return true;
+    }
+    else
+    {
+	if(aeq.appendEntryQSize&lt;=AppendEntriesQCapacity)
+	{
+		
+        	aeq.end=(aeq.end+1)%AppendEntriesQCapacity;
+    		aeq.appendr[aeq.end].term=ae.term;
+	    	aeq.appendr[aeq.end].leaderId=ae.leaderId;
+		    aeq.appendr[aeq.end].prevLogIndex=ae.prevLogIndex;  
+		    aeq.appendr[aeq.end].prevLogTerm=ae.prevLogTerm;
+		    aeq.appendr[aeq.end].logg=ae.logg;
+		    aeq.appendr[aeq.end].leaderCommit=ae.leaderCommit;
+	
+	        aeq.appendEntryQSize=aeq.appendEntryQSize+1;
+		return true;
+	}
+    }
+    return false;
+	
+}
+
+bool pop_Front_AppendEntries_Queue(AppendEntriesQueue &amp;aeq)
+{
+    if(aeq.appendEntryQSize&gt;0)
+    {
+        if(aeq.front==aeq.end)
+		aeq.end=(aeq.front+1)%AppendEntriesQCapacity;    
+        aeq.front=(aeq.front+1)%AppendEntriesQCapacity;
+	aeq.appendEntryQSize=aeq.appendEntryQSize-1;
+	
+	return true;   
+        
+    }
+    return false;
+}
+
+
+/////////////////////////////
+
+typedef struct 
+{
+    int term;
+    bool success;
+    int reqToLogIndex;    
+} AppendEntriesRes;
+
+
+
+void initialize_AppendEntriesRes(AppendEntriesRes &amp;e, int term, bool success,int reqToLogIndex)
+{   
+    e.term=term;
+    e.success=success;
+    e.reqToLogIndex=reqToLogIndex;
+    
+}
+
+typedef struct 
+{
+    AppendEntriesRes appendrs[AppendentryRSQCapacity];
+    int front;
+    int end;
+    int appendentryRSQSize;  
+} AppendEntriesResQueue;
+void initialize_AppendEntriesRes_Queue(AppendEntriesResQueue &amp;aersq)
+{
+    aersq.front=-1;
+    aersq.end=-1;
+    aersq.appendentryRSQSize=0;
+}
+bool is_Not_Empty_AppendEntriesRes_Queue(AppendEntriesResQueue &amp;aersq)
+{
+    return aersq.appendentryRSQSize&gt;0;
+}
+bool push_In_AppendEntriesRes_Queue(AppendEntriesResQueue &amp;aersq,AppendEntriesRes &amp;aers)
+{
+    if(aersq.appendentryRSQSize==0)
+    {        
+	if(aersq.front==-1)
+	{
+		aersq.front=0;
+        	aersq.end=0;
+	}
+	aersq.appendrs[aersq.end].term=aers.term;
+	aersq.appendrs[aersq.end].success=aers.success;
+	aersq.appendrs[aersq.end].reqToLogIndex=aers.reqToLogIndex;
+	
+        aersq.appendentryRSQSize=aersq.appendentryRSQSize+1;
+	return true;
+    }
+    else
+    {
+	if(aersq.appendentryRSQSize&lt;=AppendentryRSQCapacity)
+	{
+		
+        	aersq.end=(aersq.end+1)%AppendentryRSQCapacity;
+		aersq.appendrs[aersq.end].term=aers.term;
+		aersq.appendrs[aersq.end].success=aers.success;
+		aersq.appendrs[aersq.end].reqToLogIndex=aers.reqToLogIndex;
+	
+        	aersq.appendentryRSQSize=aersq.appendentryRSQSize+1;
+		return true;
+	}
+    }
+    return false;
+}
+
+bool pop_Front_AppendEntriesRes_Queue(AppendEntriesResQueue &amp;aersq)
+{
+    if(aersq.appendentryRSQSize&gt;0)
+    {
+        if(aersq.front==aersq.end)
+		aersq.end=(aersq.front+1)%AppendentryRSQCapacity;    
+        aersq.front=(aersq.front+1)%AppendentryRSQCapacity;
+	aersq.appendentryRSQSize=aersq.appendentryRSQSize-1;
+	
+	return true;   
+        
+    }
+    return false;
+    
+}
+
+//////////////////////////////
+
+
+typedef struct 
+{
+    int currentTerm;
+    int votedFor;
+    LogQueue logg;
+    int commitIndex;
+    int lastApplied;
+    int nextIndex[MaxServers];
+    int matchIndex[MaxServers];    
+    int data[MaxData];
+    VoteReqQueue vrq;
+    VoteReqResQueue vrsq;
+    AppendEntriesQueue apeq;
+    AppendEntriesResQueue apersq;
+} State;
+
+void initializeState(State &amp;s)
+{
+    int i;	
+    s.currentTerm=-1;
+    s.votedFor=-1;
+    initializeLogQueue(s.logg);
+    initialize_VoteReq_Queue(s.vrq);
+    initialize_VoteReqRes_Queue(s.vrsq);
+    initialize_AppendEntries_Queue(s.apeq);
+    initialize_AppendEntriesRes_Queue(s.apersq);
+
+    s.commitIndex=-1;
+    s.lastApplied=-1;
+    for(i=0;i&lt;MaxServers;i++)
+    {		
+    	s.matchIndex[i]=-1;
+    	s.nextIndex[i]=-1;
+    }
+    
+}
+void applyToState(State &amp;s,LogEntry e)
+{
+    s.data[e.key]=e.value;
+}
+void incrementLastApplied(State &amp;s)
+{
+    s.lastApplied++;
+}
+
+bool isGreater(int a,int b)
+{
+    return a&gt;b;
+}
+
+
+///////////////////////
+typedef struct 
+{
+    bool success;
+    int msgId;
+    int key;
+    int value;    
+} Client_Req_Response;
+void initialize_Client_Req_Res(Client_Req_Response &amp;e,int msgId,bool success,int key,int value)
+{
+    e.success=success;    
+    e.msgId=msgId;
+    e.key=key;
+    e.value=value;
+}
+
+typedef struct
+{
+    Client_Req_Response clireqres[ClientReqResQueueCapacity];
+    int front;
+    int end;
+    int cliqSize;
+}  CliReqResQueue;
+
+
+void initialize_CliReqResQueue(CliReqResQueue &amp;crrq)
+{
+    	crrq.front=-1;
+	crrq.end=-1;
+	crrq.cliqSize=0;
+}
+bool is_Not_Empty_CliReqResQueue(CliReqResQueue &amp;crrq)
+{
+    return crrq.cliqSize&gt;0;
+}
+bool push_In_CliReqResQueue(CliReqResQueue &amp;crrq,Client_Req_Response &amp;crr)
+{
+    if(crrq.cliqSize==0)
+    {        
+	if(crrq.front==-1)
+	{
+		crrq.front=0;
+        	crrq.end=0;
+	}
+	
+	crrq.clireqres[crrq.end].success=crr.success;
+	crrq.clireqres[crrq.end].msgId=crr.msgId;
+	crrq.clireqres[crrq.end].key=crr.key;  
+	crrq.clireqres[crrq.end].value=crr.value;
+	
+        crrq.cliqSize=crrq.cliqSize+1;
+	return true;
+    }
+    else
+    {
+	if(crrq.cliqSize&lt;ClientReqResQueueCapacity)
+	{
+		
+        	crrq.end=(crrq.end+1)%ClientReqResQueueCapacity;
+		
+		crrq.clireqres[crrq.end].success=crr.success;
+		crrq.clireqres[crrq.end].msgId=crr.msgId;
+		crrq.clireqres[crrq.end].key=crr.key;  
+		crrq.clireqres[crrq.end].value=crr.value;
+	
+        	crrq.cliqSize=crrq.cliqSize+1;
+		return true;
+	}
+    }
+    return false;
+}
+
+bool pop_Front_CliReqResQueue(CliReqResQueue &amp;crrq)
+{
+    if(crrq.cliqSize&gt;0)
+    {
+        if(crrq.front==crrq.end)
+		crrq.end=(crrq.front+1)%ClientReqResQueueCapacity;    
+        crrq.front=(crrq.front+1)%ClientReqResQueueCapacity;
+	crrq.cliqSize=crrq.cliqSize-1;
+	
+	return true;   
+        
+    }
+    return false;	
+}
+///////////////////////////
+typedef struct
+{
+    int clientId;
+    bool isREADorWRITE;
+    int msgId;
+    int key;
+    int value;
+}  Cli_Req;
+
+
+void initialize_Cli_Req(Cli_Req &amp;e,int clientId,bool isREADorWRITE,int msgId,int key, int value)
+{
+    e.clientId=clientId;    
+    e.isREADorWRITE=isREADorWRITE;
+    e.msgId=msgId;
+    e.key=key;
+    e.value=value;
+}
+
+typedef struct 
+{
+    Cli_Req clireq[ClientReqQueueCapacity];
+    int front;
+    int end;
+    int reqSize;	    
+
+} CliReqQueue;
+void initializeCliReqQueue(CliReqQueue &amp;crq)
+{
+	crq.front=-1;
+	crq.end=-1;
+	crq.reqSize=0;
+}
+bool isNotEmptyCliReqQueue(CliReqQueue &amp;crq)
+{
+    return crq.reqSize&gt;0;
+}
+bool pushInCliReqQueue(CliReqQueue &amp;crq,Cli_Req &amp;cr)
+{
+    if(crq.reqSize==0)
+    {        
+	if(crq.front==-1)
+	{
+		crq.front=0;
+        	crq.end=0;
+	}
+	
+	crq.clireq[crq.end].clientId=cr.clientId;
+	crq.clireq[crq.end].isREADorWRITE=cr.isREADorWRITE;
+	crq.clireq[crq.end].msgId=cr.msgId;  
+	crq.clireq[crq.end].key=cr.key;
+	crq.clireq[crq.end].value=cr.value;
+	
+        crq.reqSize=crq.reqSize+1;
+	return true;
+    }
+    else
+    {
+	if(crq.reqSize&lt;ClientReqQueueCapacity)
+	{
+		
+        	crq.end=(crq.end+1)%ClientReqQueueCapacity;
+		crq.clireq[crq.end].clientId=cr.clientId;
+		crq.clireq[crq.end].isREADorWRITE=cr.isREADorWRITE;
+		crq.clireq[crq.end].msgId=cr.msgId;  
+		crq.clireq[crq.end].key=cr.key;
+		crq.clireq[crq.end].value=cr.value;
+	
+        	crq.reqSize=crq.reqSize+1;
+		return true;
+	}
+    }
+    return false;
+}
+
+bool popFrontCliReqQueue(CliReqQueue &amp;crq)
+{
+    if(crq.reqSize&gt;0)
+    {
+        if(crq.front==crq.end)
+		crq.end=(crq.front+1)%ClientReqQueueCapacity;    
+        crq.front=(crq.front+1)%ClientReqQueueCapacity;
+	crq.reqSize=crq.reqSize-1;
+	
+	return true;   
+        
+    }
+    return false;
+}
+
+///////////////////////////////////
+
+typedef struct 
+{
+    int id;
+    int last_Client_Req;
+    int last_Response_Got;
+    CliReqQueue cli_req;       
+    CliReqResQueue cli_reqres;
+    
+} Client;
+
+void initializeClient(Client &amp;c,int id)
+{
+    c.id=id;
+    c.last_Client_Req=-1;
+    c.last_Response_Got=-1;
+    initializeCliReqQueue(c.cli_req);
+    initialize_CliReqResQueue(c.cli_reqres);
+}
+
+
+
+State s[MaxServers];
+
+urgent broadcast chan Server_Start[MaxServers];
+urgent broadcast chan Server_End[MaxServers];
+urgent broadcast chan Follower_Start[MaxServers];
+urgent broadcast chan Follower_End[MaxServers];
+urgent broadcast chan Candidate_Start[MaxServers];
+urgent broadcast chan Candidate_End[MaxServers];
+urgent broadcast chan Leader_Start[MaxServers];
+urgent broadcast chan Leader_End[MaxServers];
+
+
+broadcast chan Vote_Response_Chan[MaxServers];
+broadcast chan AppendEntries_Chan[MaxServers];
+broadcast chan AppendEntries_Response_Chan[MaxServers];
+
+
+urgent broadcast chan Received_Vote_From_Majority[MaxServers];
+urgent broadcast chan Discovers_Current_Leader_OR_Higher_Term[MaxServers];
+urgent broadcast chan Discovered_Server_With_Higher_Term[MaxServers];
+
+
+clock timeoutvar[MaxServers];
+
+
+broadcast chan Vote_Request_Chan[MaxServers];
+
+
+</declaration>
+	<template>
+		<name x="5" y="5">Server</name>
+		<parameter>int serverId</parameter>
+		<declaration>int[0,(MaxServers-1)] toServerId;
+//int [0,MaxServers] votedFor;
+int term;
+//int lastLogIndex;
+//int lastLogTerm;
+bool voteGranted;
+int novoteGranted;
+bool isSend[MaxServers];
+meta int i;
+VoteReq vr;
+VoteReqRes vrrs;
+bool canSend(int i)
+{
+    return (isSend[i]==false);
+}
+bool canGrantVote()
+{   
+    
+
+    if(term&lt;s[serverId].currentTerm)
+        return false;
+    else
+    {
+        if(term&gt;s[serverId].currentTerm)
+        {
+              return true;  
+        }
+        else
+        {
+            if(s[serverId].votedFor==-1 || s[serverId].votedFor==toServerId)
+            {
+                return true;
+            }
+            else
+                return false;
+        }
+        //if(s[serverId].votedFor==-1 || s[serverId].votedFor==toServerId)
+        //{
+            //if(s[serverId].lastLogIndex&lt;=lastLogIndex &amp;&amp; s[serverId].lastLogTerm&lt;=lastLogTerm)
+            //
+            
+            return true;
+        //}
+    }
+    return false;
+}
+void sendRefuseVote()
+{
+
+    vrrs.term=s[serverId].currentTerm;
+    vrrs.voteGranted=false;
+    vrrs.followerId=serverId;
+    vrrs.candidateId=toServerId;    
+    push_In_VoteReqRes_Queue(s[toServerId].vrsq,vrrs);    
+}
+void sendGrantVote()
+{
+
+    vrrs.term=s[serverId].currentTerm;
+    vrrs.voteGranted=true;
+    vrrs.followerId=serverId;
+    vrrs.candidateId=toServerId;    
+    push_In_VoteReqRes_Queue(s[toServerId].vrsq,vrrs);
+}
+bool Ismytermuptodate()
+{
+    if(term&lt;=s[serverId].currentTerm)
+        return false;    
+    return true;
+    
+}
+void initializeSendVoteRequests()
+{
+    //initialize_VoteReq(s[serverId].currentTerm,serverId,s[serverId].logg.end,s[serverId].logg.logg[s[serverId].logg.end].term);
+    
+    //initialize_VoteReq(vr,s[serverId].currentTerm,serverId,-1,-1);
+    
+    for(i=0;i&lt;MaxServers;i++)
+    {
+        isSend[i]=false;
+        if(i==serverId)
+        {    //push_In_VoteReq_Queue(s[k].vrq,vr);
+             isSend[i]=true;
+        }
+    }
+}
+void pushSendVoteRequest(int k)
+{
+    initialize_VoteReq(vr,s[serverId].currentTerm,serverId,-1,-1);
+    push_In_VoteReq_Queue(s[k].vrq,vr);  
+}
+void updateCurrentTerm()
+{
+    if(term&gt;s[serverId].currentTerm)
+    {   
+        s[serverId].currentTerm=term;
+        s[serverId].votedFor=toServerId;
+        
+    }
+}
+void updateParametersVoteRequest()
+{
+    term=s[serverId].vrq.votereq[s[serverId].vrq.front].term;
+    toServerId=s[serverId].vrq.votereq[s[serverId].vrq.front].candidateId;
+    pop_Front_VoteReq_Queue(s[serverId].vrq);
+}
+void updateParametersVoteResponse()
+{
+    term=s[serverId].vrsq.vrrs[s[serverId].vrsq.front].term;    
+    voteGranted=s[serverId].vrsq.vrrs[s[serverId].vrsq.front].voteGranted;    
+    pop_Front_VoteReqRes_Queue(s[serverId].vrsq);
+}
+void voteForSelf()
+{
+    s[serverId].votedFor=serverId;
+    voteGranted=true;
+    novoteGranted=1;
+}
+bool foundNewTerm()
+{
+    if(term&gt;s[serverId].currentTerm)
+        return true;    
+    return false;
+}
+bool IsVoteGranted()
+{
+    if(voteGranted==true)
+        return true;
+    return false;
+}
+void incrementCurrentTerm()
+{
+    s[serverId].currentTerm=s[serverId].currentTerm+1;
+}</declaration>
+		<location id="id0" x="-797" y="-433">
+			<committed/>
+		</location>
+		<location id="id1" x="870" y="-38">
+			<committed/>
+		</location>
+		<location id="id2" x="767" y="-80">
+			<committed/>
+		</location>
+		<location id="id3" x="-100" y="-156">
+			<committed/>
+		</location>
+		<location id="id4" x="-254" y="-204">
+			<committed/>
+		</location>
+		<location id="id5" x="314" y="389">
+			<committed/>
+		</location>
+		<location id="id6" x="-636" y="-22">
+			<committed/>
+		</location>
+		<location id="id7" x="598" y="-270">
+			<committed/>
+		</location>
+		<location id="id8" x="855" y="-320">
+			<committed/>
+		</location>
+		<location id="id9" x="-190" y="-354">
+			<committed/>
+		</location>
+		<location id="id10" x="312" y="212">
+		</location>
+		<location id="id11" x="200" y="-51">
+		</location>
+		<location id="id12" x="-353" y="-19">
+		</location>
+		<location id="id13" x="-336" y="228">
+		</location>
+		<location id="id14" x="-331" y="349">
+		</location>
+		<init ref="id14"/>
+		<transition>
+			<source ref="id11"/>
+			<target ref="id11"/>
+			<label kind="guard" x="266" y="-72">novoteGranted&gt;(MaxServers/2)</label>
+			<label kind="synchronisation" x="226" y="-52">Received_Vote_From_Majority[serverId]!</label>
+			<nail x="424" y="-108"/>
+			<nail x="422" y="-24"/>
+		</transition>
+		<transition>
+			<source ref="id11"/>
+			<target ref="id11"/>
+			<label kind="select" x="235" y="19">x: int[0, MaxServers-1]</label>
+			<label kind="guard" x="228" y="30">canSend(x)</label>
+			<label kind="synchronisation" x="206" y="44">Vote_Request_Chan[x]!</label>
+			<label kind="assignment" x="163" y="59">isSend[x]=true, pushSendVoteRequest(x)</label>
+			<nail x="355" y="58"/>
+			<nail x="228" y="92"/>
+		</transition>
+		<transition>
+			<source ref="id6"/>
+			<target ref="id12"/>
+			<label kind="assignment" x="-708" y="50">updateCurrentTerm()</label>
+			<nail x="-698" y="49"/>
+			<nail x="-475" y="48"/>
+		</transition>
+		<transition>
+			<source ref="id1"/>
+			<target ref="id10"/>
+			<label kind="synchronisation" x="527" y="54">Discovered_Server_With_Higher_Term[serverId]!</label>
+		</transition>
+		<transition>
+			<source ref="id2"/>
+			<target ref="id10"/>
+			<label kind="synchronisation" x="417" y="2">Discovered_Server_With_Higher_Term[serverId]!</label>
+		</transition>
+		<transition>
+			<source ref="id8"/>
+			<target ref="id1"/>
+			<label kind="guard" x="757" y="-134">foundNewTerm() &amp;&amp; !canGrantVote()</label>
+			<label kind="synchronisation" x="759" y="-117">Vote_Response_Chan[toServerId]!</label>
+			<label kind="assignment" x="748" y="-105">updateCurrentTerm(),sendRefuseVote()</label>
+		</transition>
+		<transition>
+			<source ref="id8"/>
+			<target ref="id2"/>
+			<label kind="guard" x="732" y="-203">foundNewTerm() &amp;&amp; canGrantVote()</label>
+			<label kind="synchronisation" x="697" y="-189">Vote_Response_Chan[toServerId]!</label>
+			<label kind="assignment" x="717" y="-171">updateCurrentTerm(),sendGrantVote()</label>
+		</transition>
+		<transition>
+			<source ref="id3"/>
+			<target ref="id11"/>
+			<label kind="synchronisation" x="-164" y="-118">Discovers_Current_Leader_OR_Higher_Term[serverId]!</label>
+		</transition>
+		<transition>
+			<source ref="id9"/>
+			<target ref="id3"/>
+			<label kind="guard" x="-215" y="-232">foundNewTerm() &amp;&amp; !canGrantVote()</label>
+			<label kind="synchronisation" x="-193" y="-221">Vote_Response_Chan[toServerId]!</label>
+			<label kind="assignment" x="-234" y="-207">updateCurrentTerm(),sendRefuseVote()</label>
+		</transition>
+		<transition>
+			<source ref="id4"/>
+			<target ref="id11"/>
+			<label kind="synchronisation" x="-270" y="-85">Discovers_Current_Leader_OR_Higher_Term[serverId]!</label>
+			<nail x="-172" y="-68"/>
+		</transition>
+		<transition>
+			<source ref="id9"/>
+			<target ref="id4"/>
+			<label kind="guard" x="-367" y="-274">foundNewTerm() &amp;&amp; canGrantVote()</label>
+			<label kind="synchronisation" x="-358" y="-261">Vote_Response_Chan[toServerId]!</label>
+			<label kind="assignment" x="-364" y="-248">updateCurrentTerm(),sendGrantVote()</label>
+		</transition>
+		<transition>
+			<source ref="id5"/>
+			<target ref="id10"/>
+			<label kind="guard" x="460" y="381">foundNewTerm()</label>
+			<label kind="synchronisation" x="363" y="393">Discovered_Server_With_Higher_Term[serverId]!</label>
+			<label kind="assignment" x="445" y="406">updateCurrentTerm()</label>
+			<nail x="507" y="442"/>
+			<nail x="508" y="268"/>
+		</transition>
+		<transition>
+			<source ref="id5"/>
+			<target ref="id10"/>
+			<label kind="guard" x="60" y="376">!foundNewTerm()</label>
+			<nail x="132" y="436"/>
+			<nail x="129" y="294"/>
+		</transition>
+		<transition>
+			<source ref="id10"/>
+			<target ref="id5"/>
+			<label kind="synchronisation" x="214" y="299">Vote_Response_Chan[serverId]?</label>
+			<label kind="assignment" x="206" y="316">updateParametersVoteResponse()</label>
+		</transition>
+		<transition>
+			<source ref="id12"/>
+			<target ref="id6"/>
+			<label kind="synchronisation" x="-618" y="-37">Vote_Response_Chan[serverId]?</label>
+			<label kind="assignment" x="-618" y="-20">updateParametersVoteResponse()</label>
+		</transition>
+		<transition>
+			<source ref="id7"/>
+			<target ref="id11"/>
+			<label kind="guard" x="477" y="-519">foundNewTerm()</label>
+			<label kind="synchronisation" x="383" y="-503">Discovers_Current_Leader_OR_Higher_Term[serverId]!</label>
+			<label kind="assignment" x="455" y="-487">updateCurrentTerm()</label>
+			<nail x="630" y="-495"/>
+		</transition>
+		<transition>
+			<source ref="id7"/>
+			<target ref="id11"/>
+			<label kind="guard" x="569" y="-410">!foundNewTerm() &amp;&amp; !IsVoteGranted()</label>
+			<nail x="648" y="-431"/>
+		</transition>
+		<transition>
+			<source ref="id7"/>
+			<target ref="id11"/>
+			<label kind="guard" x="518" y="-337">!foundNewTerm() &amp;&amp; IsVoteGranted()</label>
+			<label kind="assignment" x="539" y="-320">novoteGranted=novoteGranted+1</label>
+			<nail x="615" y="-363"/>
+		</transition>
+		<transition>
+			<source ref="id11"/>
+			<target ref="id7"/>
+			<label kind="synchronisation" x="339" y="-171">Vote_Response_Chan[serverId]?</label>
+			<label kind="assignment" x="338" y="-152">updateParametersVoteResponse()</label>
+		</transition>
+		<transition>
+			<source ref="id8"/>
+			<target ref="id10"/>
+			<label kind="guard" x="1170" y="231">!foundNewTerm() &amp;&amp; !canGrantVote()</label>
+			<label kind="synchronisation" x="1171" y="254">Vote_Response_Chan[toServerId]!</label>
+			<label kind="assignment" x="1182" y="271">sendRefuseVote()</label>
+			<nail x="1251" y="306"/>
+		</transition>
+		<transition>
+			<source ref="id8"/>
+			<target ref="id10"/>
+			<label kind="guard" x="777" y="145">!foundNewTerm() &amp;&amp; canGrantVote()</label>
+			<label kind="synchronisation" x="789" y="163">Vote_Response_Chan[toServerId]!</label>
+			<label kind="assignment" x="821" y="176">sendGrantVote()</label>
+			<nail x="1018" y="138"/>
+		</transition>
+		<transition>
+			<source ref="id10"/>
+			<target ref="id8"/>
+			<label kind="synchronisation" x="513" y="-86">Vote_Request_Chan[serverId]?</label>
+			<label kind="assignment" x="506" y="-76">updateParametersVoteRequest()</label>
+		</transition>
+		<transition>
+			<source ref="id13"/>
+			<target ref="id11"/>
+			<label kind="synchronisation" x="-240" y="119">Candidate_Start[serverId]?</label>
+			<label kind="assignment" x="-322" y="132">incrementCurrentTerm(),voteForSelf(),initializeSendVoteRequests()</label>
+		</transition>
+		<transition>
+			<source ref="id9"/>
+			<target ref="id11"/>
+			<label kind="guard" x="-172" y="-484">!foundNewTerm() &amp;&amp; !canGrantVote()</label>
+			<label kind="synchronisation" x="-172" y="-467">Vote_Response_Chan[toServerId]!</label>
+			<label kind="assignment" x="-172" y="-450">sendRefuseVote()</label>
+			<nail x="56" y="-547"/>
+			<nail x="329" y="-241"/>
+		</transition>
+		<transition>
+			<source ref="id9"/>
+			<target ref="id11"/>
+			<label kind="guard" x="-44" y="-296">!foundNewTerm() &amp;&amp; canGrantVote()</label>
+			<label kind="synchronisation" x="-45" y="-280">Vote_Response_Chan[toServerId]!</label>
+			<label kind="assignment" x="-43" y="-266">sendGrantVote()</label>
+			<nail x="10" y="-391"/>
+			<nail x="246" y="-204"/>
+		</transition>
+		<transition>
+			<source ref="id11"/>
+			<target ref="id9"/>
+			<label kind="synchronisation" x="-17" y="-186">Vote_Request_Chan[serverId]?</label>
+			<label kind="assignment" x="-36" y="-172">updateParametersVoteRequest()</label>
+		</transition>
+		<transition>
+			<source ref="id0"/>
+			<target ref="id12"/>
+			<label kind="guard" x="-612" y="-464">!canGrantVote()</label>
+			<label kind="synchronisation" x="-612" y="-441">Vote_Response_Chan[toServerId]!</label>
+			<label kind="assignment" x="-615" y="-423">updateCurrentTerm(),sendRefuseVote()</label>
+			<nail x="-621" y="-515"/>
+			<nail x="-409" y="-353"/>
+		</transition>
+		<transition>
+			<source ref="id0"/>
+			<target ref="id12"/>
+			<label kind="guard" x="-714" y="-319">canGrantVote()</label>
+			<label kind="synchronisation" x="-731" y="-300">Vote_Response_Chan[toServerId]!</label>
+			<label kind="assignment" x="-748" y="-283">updateCurrentTerm(),sendGrantVote()</label>
+		</transition>
+		<transition>
+			<source ref="id12"/>
+			<target ref="id0"/>
+			<label kind="synchronisation" x="-887" y="-199">Vote_Request_Chan[serverId]?</label>
+			<label kind="assignment" x="-905" y="-179">updateParametersVoteRequest()</label>
+			<nail x="-812" y="-177"/>
+		</transition>
+		<transition>
+			<source ref="id10"/>
+			<target ref="id13"/>
+			<label kind="synchronisation" x="-68" y="279">Leader_End[serverId]?</label>
+			<nail x="-17" y="305"/>
+		</transition>
+		<transition>
+			<source ref="id11"/>
+			<target ref="id13"/>
+			<label kind="synchronisation" x="-28" y="92">Candidate_End[serverId]?</label>
+			<nail x="-11" y="167"/>
+		</transition>
+		<transition>
+			<source ref="id12"/>
+			<target ref="id13"/>
+			<label kind="synchronisation" x="-331" y="70">Follower_End[serverId]?</label>
+			<nail x="-213" y="88"/>
+		</transition>
+		<transition>
+			<source ref="id13"/>
+			<target ref="id10"/>
+			<label kind="synchronisation" x="-54" y="200">Leader_Start[serverId]?</label>
+		</transition>
+		<transition>
+			<source ref="id13"/>
+			<target ref="id12"/>
+			<label kind="synchronisation" x="-556" y="112">Follower_Start[serverId]?</label>
+			<nail x="-484" y="122"/>
+		</transition>
+		<transition>
+			<source ref="id13"/>
+			<target ref="id14"/>
+			<label kind="synchronisation" x="-302" y="279">Server_End[serverId]?</label>
+			<nail x="-214" y="290"/>
+		</transition>
+		<transition>
+			<source ref="id14"/>
+			<target ref="id13"/>
+			<label kind="synchronisation" x="-524" y="284">Server_Start[serverId]?</label>
+			<label kind="assignment" x="-530" y="299">initializeState(s[serverId])</label>
+			<nail x="-448" y="296"/>
+		</transition>
+	</template>
+	<template>
+		<name>State_Transitions</name>
+		<parameter>int serverId,int timeout</parameter>
+		<location id="id15" x="-980" y="-236">
+		</location>
+		<location id="id16" x="-977" y="-337">
+		</location>
+		<location id="id17" x="7" y="-400">
+			<committed/>
+		</location>
+		<location id="id18" x="-475" y="-405">
+			<committed/>
+		</location>
+		<location id="id19" x="-384" y="51">
+			<committed/>
+		</location>
+		<location id="id20" x="-615" y="49">
+			<committed/>
+		</location>
+		<location id="id21" x="139" y="-9">
+			<committed/>
+		</location>
+		<location id="id22" x="-239" y="0">
+			<committed/>
+		</location>
+		<location id="id23" x="149" y="-235">
+			<committed/>
+		</location>
+		<location id="id24" x="-72" y="-232">
+			<committed/>
+		</location>
+		<location id="id25" x="-484" y="-226">
+			<committed/>
+		</location>
+		<location id="id26" x="-742" y="-226">
+			<committed/>
+		</location>
+		<location id="id27" x="389" y="-132">
+			<name x="377" y="-119">Leader</name>
+		</location>
+		<location id="id28" x="-259" y="-161">
+			<name x="-279" y="-143">Candidate</name>
+		</location>
+		<location id="id29" x="-971" y="-124">
+			<name x="-1037" y="-113">Follower</name>
+		</location>
+		<init ref="id16"/>
+		<transition>
+			<source ref="id15"/>
+			<target ref="id29"/>
+			<label kind="synchronisation" x="-1064" y="-209">Follower_Start[serverId]?</label>
+			<label kind="assignment" x="-1044" y="-196">timeoutvar[serverId]:=0</label>
+		</transition>
+		<transition>
+			<source ref="id16"/>
+			<target ref="id15"/>
+			<label kind="synchronisation" x="-1033" y="-297">Server_Start[serverId]?</label>
+		</transition>
+		<transition>
+			<source ref="id22"/>
+			<target ref="id29"/>
+			<label kind="synchronisation" x="-665" y="-81">Follower_Start[serverId]!</label>
+		</transition>
+		<transition>
+			<source ref="id20"/>
+			<target ref="id29"/>
+			<label kind="synchronisation" x="-783" y="-28">Follower_Start[serverId]!</label>
+		</transition>
+		<transition>
+			<source ref="id19"/>
+			<target ref="id20"/>
+			<label kind="synchronisation" x="-586" y="32">Candidate_End[serverId]!</label>
+		</transition>
+		<transition>
+			<source ref="id28"/>
+			<target ref="id19"/>
+			<label kind="synchronisation" x="-395" y="-90">Discovers_Current_Leader_OR_Higher_Term[serverId]?</label>
+		</transition>
+		<transition>
+			<source ref="id21"/>
+			<target ref="id22"/>
+			<label kind="synchronisation" x="-137" y="-22">Leader_End[serverId]!</label>
+		</transition>
+		<transition>
+			<source ref="id27"/>
+			<target ref="id21"/>
+			<label kind="synchronisation" x="106" y="-77">Discovered_Server_With_Higher_Term[serverId]?</label>
+		</transition>
+		<transition>
+			<source ref="id23"/>
+			<target ref="id27"/>
+			<label kind="synchronisation" x="191" y="-202">Leader_Start[serverId]!</label>
+		</transition>
+		<transition>
+			<source ref="id24"/>
+			<target ref="id23"/>
+			<label kind="synchronisation" x="-54" y="-253">Candidate_End[serverId]!</label>
+		</transition>
+		<transition>
+			<source ref="id28"/>
+			<target ref="id24"/>
+			<label kind="synchronisation" x="-206" y="-200">Received_Vote_From_Majority[serverId]?</label>
+		</transition>
+		<transition>
+			<source ref="id17"/>
+			<target ref="id28"/>
+			<label kind="synchronisation" x="-151" y="-351">Candidate_Start[serverId]!</label>
+			<label kind="assignment" x="-152" y="-333">timeoutvar[serverId]=0</label>
+		</transition>
+		<transition>
+			<source ref="id18"/>
+			<target ref="id17"/>
+			<label kind="synchronisation" x="-342" y="-426">Candidate_End[serverId]!</label>
+		</transition>
+		<transition>
+			<source ref="id28"/>
+			<target ref="id18"/>
+			<label kind="guard" x="-474" y="-335">timeoutvar[serverId]&gt;=25*timeout</label>
+		</transition>
+		<transition>
+			<source ref="id25"/>
+			<target ref="id28"/>
+			<label kind="synchronisation" x="-488" y="-199">Candidate_Start[serverId]!</label>
+		</transition>
+		<transition>
+			<source ref="id26"/>
+			<target ref="id25"/>
+			<label kind="synchronisation" x="-700" y="-245">Follower_End[serverId]!</label>
+		</transition>
+		<transition>
+			<source ref="id29"/>
+			<target ref="id26"/>
+			<label kind="guard" x="-953" y="-162">timeoutvar[serverId]&gt;=timeout</label>
+			<label kind="assignment" x="-953" y="-149">timeoutvar[serverId]:=0</label>
+		</transition>
+	</template>
+	<template>
+		<name>Arbiter</name>
+		<location id="id30" x="-2592" y="42">
+			<name x="-2684" y="5">Follower4_Started</name>
+		</location>
+		<location id="id31" x="-2431" y="38">
+			<name x="-2489" y="56">Follower3_Started</name>
+			<urgent/>
+		</location>
+		<location id="id32" x="-2279" y="33">
+			<name x="-2359" y="3">Follower2_Started</name>
+			<urgent/>
+		</location>
+		<location id="id33" x="-2127" y="28">
+			<name x="-2166" y="42">Follower1_Started</name>
+			<urgent/>
+		</location>
+		<location id="id34" x="-1971" y="25">
+			<name x="-2006" y="-5">Follower0_Started</name>
+			<urgent/>
+		</location>
+		<location id="id35" x="-1894" y="173">
+			<name x="-1967" y="142">Server4_Started</name>
+			<urgent/>
+		</location>
+		<location id="id36" x="-2033" y="175">
+			<name x="-2095" y="140">Server3_Started</name>
+			<urgent/>
+		</location>
+		<location id="id37" x="-2183" y="183">
+			<name x="-2232" y="148">Server2_Started</name>
+			<urgent/>
+		</location>
+		<location id="id38" x="-2346" y="190">
+			<name x="-2383" y="209">Server1_Started</name>
+			<urgent/>
+		</location>
+		<location id="id39" x="-2485" y="195">
+			<name x="-2529" y="161">Server0_Started</name>
+			<urgent/>
+		</location>
+		<location id="id40" x="-2650" y="196">
+			<name x="-2793" y="184">Arbiter_Start_State</name>
+		</location>
+		<init ref="id40"/>
+		<transition>
+			<source ref="id31"/>
+			<target ref="id30"/>
+			<label kind="synchronisation" x="-2567" y="18">Follower_Start[4]!</label>
+		</transition>
+		<transition>
+			<source ref="id32"/>
+			<target ref="id31"/>
+			<label kind="synchronisation" x="-2410" y="39">Follower_Start[3]!</label>
+		</transition>
+		<transition>
+			<source ref="id33"/>
+			<target ref="id32"/>
+			<label kind="synchronisation" x="-2261" y="15">Follower_Start[2]!</label>
+		</transition>
+		<transition>
+			<source ref="id34"/>
+			<target ref="id33"/>
+			<label kind="synchronisation" x="-2104" y="9">Follower_Start[1]!</label>
+		</transition>
+		<transition>
+			<source ref="id35"/>
+			<target ref="id34"/>
+			<label kind="synchronisation" x="-1953" y="82">Follower_Start[0]!</label>
+		</transition>
+		<transition>
+			<source ref="id36"/>
+			<target ref="id35"/>
+			<label kind="synchronisation" x="-2024" y="178">Server_Start[4]!</label>
+		</transition>
+		<transition>
+			<source ref="id37"/>
+			<target ref="id36"/>
+			<label kind="synchronisation" x="-2166" y="185">Server_Start[3]!</label>
+		</transition>
+		<transition>
+			<source ref="id38"/>
+			<target ref="id37"/>
+			<label kind="synchronisation" x="-2329" y="164">Server_Start[2]!</label>
+		</transition>
+		<transition>
+			<source ref="id39"/>
+			<target ref="id38"/>
+			<label kind="synchronisation" x="-2468" y="195">Server_Start[1]!</label>
+		</transition>
+		<transition>
+			<source ref="id40"/>
+			<target ref="id39"/>
+			<label kind="synchronisation" x="-2632" y="179">Server_Start[0]!</label>
+		</transition>
+	</template>
+	<system>
+S_0 = Server(0);
+S_1 = Server(1);
+S_2 = Server(2);
+S_3 = Server(3);
+S_4 = Server(4);
+
+
+SS_0=State_Transitions(0,15);
+SS_1=State_Transitions(1,15);
+SS_2=State_Transitions(2,15);
+SS_3=State_Transitions(3,15);
+SS_4=State_Transitions(4,15);
+
+Ar=Arbiter();
+
+
+system S_0,S_1,S_2,S_3,S_4,SS_0,SS_1,SS_2,SS_3,SS_4,Ar;</system>
+</nta>
